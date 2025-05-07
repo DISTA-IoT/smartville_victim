@@ -109,10 +109,22 @@ def modify_and_save_pcap(input_pcap_file, output_pcap_file):
 
 
 def resend_pcap_with_modification_tcpreplay():
-    global current_replay_process, stop_flag, rewriting
-    
-    original_pcap_file = os.path.join(f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}.pcap")
-    file_to_replay = f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}-from{SOURCE_IP}to{TARGET_IP}.pcap"
+    if PATTERN_TO_REPLAY == 'doorlock':
+        for i in range(1,4):
+            original_pcap_file = os.path.join(f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}_{i}.pcap")
+            file_to_replay = f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}_{i}-from{SOURCE_IP}to{TARGET_IP}.pcap"
+            rewrite_and_send(original_pcap_file,file_to_replay)
+
+    else:
+
+        original_pcap_file = os.path.join(f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}.pcap")
+        file_to_replay = f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}-from{SOURCE_IP}to{TARGET_IP}.pcap"
+        rewrite_and_send(original_pcap_file,file_to_replay)
+
+
+
+def rewrite_and_send(original_pcap_file, file_to_replay):
+    global rewriting, current_replay_process, stop_flag
     rewriting = False
 
     if not os.path.exists(file_to_replay):
