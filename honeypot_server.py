@@ -203,7 +203,7 @@ async def create_item(item: dict):
 @app.get("/health")
 async def health_check():
     logger.debug("Health check endpoint called")
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {"message": "healthy", "timestamp": datetime.now().isoformat()}
 
 
 @app.post("/replay")
@@ -233,16 +233,16 @@ async def start_replay(kwargs: dict):
     
     replay_thread, checker_thread = start_replay_with_monitor()  # Execute the function immediately
 
-    return {"status": "Replay started", "pattern": PATTERN_TO_REPLAY, "target": TARGET_IP}
+    return {"message": f"Replay started with pattern {PATTERN_TO_REPLAY} target {TARGET_IP}"}
 
 
 @app.get("/replay_status")
 async def get_replay_status():
     logger.info("Replay status endpoint called")
     if current_replay_process is None:
-        return {"status": "stopped"}
+        return {"message": "Replay is not running"}
     else:
-        return {"status": "running"}
+        return {"message": "Replay is running"}
 
 
 @app.post("/stop")
