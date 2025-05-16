@@ -203,7 +203,7 @@ async def create_item(item: dict):
 @app.get("/health")
 async def health_check():
     logger.debug("Health check endpoint called")
-    return {"message": "healthy", "timestamp": datetime.now().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
 @app.post("/replay")
@@ -212,12 +212,14 @@ async def start_replay(kwargs: dict):
     global replay_thread, checker_thread
     logger.info("Replay endpoint called")
 
-    if not stop_flag:
-        logger.info("Replay already in progress.")
-        return {"message": "Replay already in progress."}
+    
     
     PATTERN_TO_REPLAY = kwargs.get('pattern', None)
     TARGET_IP = kwargs.get('dest_ip', None)
+
+    if not stop_flag:
+        logger.info("Replay already in progress.")
+        return {"message": f"Already processing {PATTERN_TO_REPLAY}"}
 
     # Your new source IP
     SOURCE_IP = get_static_source_ip_address()
@@ -233,16 +235,16 @@ async def start_replay(kwargs: dict):
     
     replay_thread, checker_thread = start_replay_with_monitor()  # Execute the function immediately
 
-    return {"message": f"Replay started with pattern {PATTERN_TO_REPLAY} target {TARGET_IP}"}
+    return {"message": f"Started replaying {PATTERN_TO_REPLAY} to {TARGET_IP}"}
 
 
 @app.get("/replay_status")
 async def get_replay_status():
     logger.info("Replay status endpoint called")
     if current_replay_process is None:
-        return {"message": "Replay is not running"}
+        return {"message": "Replay not running"}
     else:
-        return {"message": "Replay is running"}
+        return {"message": "Replay running"}
 
 
 @app.post("/stop")
