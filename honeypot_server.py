@@ -38,6 +38,7 @@ TARGET_IP = None
 IFACE_NAME = 'eth0'
 PATTERN_TO_REPLAY = None
 PREPROCESSED = None
+SPEED_MULTIPLIER = None
 
 stop_flag = True
 stop_flag_lock = Lock()
@@ -138,7 +139,7 @@ def rewrite_and_send(original_pcap_file, file_to_replay):
 
     print('sending...')
     # Tcpreplay command to send the modified packets
-    cmd = f"tcpreplay -i {IFACE_NAME} --stats 3 {file_to_replay}"
+    cmd = f"tcpreplay -i {IFACE_NAME} -x {SPEED_MULTIPLIER} --stats 3 {file_to_replay}"
     
     while not stop_flag:
         # Use Popen instead of run to have more control over the process
@@ -208,7 +209,7 @@ async def health_check():
 
 @app.post("/replay")
 async def start_replay(kwargs: dict):
-    global PATTERN_TO_REPLAY, TARGET_IP, SOURCE_IP, SOURCE_MAC, stop_flag
+    global PATTERN_TO_REPLAY, TARGET_IP, SOURCE_IP, SOURCE_MAC, SPEED_MULTIPLIER, stop_flag
     global replay_thread, checker_thread
     logger.info("Replay endpoint called")
 
@@ -224,11 +225,13 @@ async def start_replay(kwargs: dict):
     # Your new source IP
     SOURCE_IP = get_static_source_ip_address()
     SOURCE_MAC = get_source_mac()
+    SPEED_MULTIPLIER = kwargs.get('speed_multiplier')
 
-    logger.debug(f'Source IP {SOURCE_IP}')
-    logger.debug(f'Source MAC {SOURCE_MAC}')
-    logger.debug(f'Target IP {TARGET_IP}')
-    logger.debug(f'Pattern to replay: {PATTERN_TO_REPLAY}')
+    logger.info(f'Source IP {SOURCE_IP}')
+    logger.info(f'Source MAC {SOURCE_MAC}')
+    logger.info(f'Target IP {TARGET_IP}')
+    logger.info(f'Pattern to replay: {PATTERN_TO_REPLAY}')
+    logger.info(f'Speed Multiplier: {SPEED_MULTIPLIER}')
 
     with stop_flag_lock:
         stop_flag = False
