@@ -25,11 +25,14 @@ from scapy.all import *
 import netifaces as ni
 from scapy.all import IP
 import threading
-from tqdm import tqdm
 import atexit
 import signal
 from threading import Lock
 import shlex
+from health_monitor import HealthMonitor
+from confluent_kafka import SerializingProducer
+from confluent_kafka.serialization import StringSerializer
+
 
 # Global variables for process management
 SOURCE_IP = None
@@ -39,7 +42,14 @@ IFACE_NAME = 'eth0'
 PATTERN_TO_REPLAY = None
 PREPROCESSED = None
 SPEED_MULTIPLIER = None
+HEALTH_MONITORING = None
+KAFKA_ENDPOINT = None
 
+
+
+health_monitor = None
+kafka_msg_producer = None
+healt_probes_count = 0
 stop_flag = True
 stop_flag_lock = Lock()
 current_replay_process: Optional[subprocess.Popen] = None
@@ -213,6 +223,44 @@ def start_replay_with_monitor():
     return replay_thread, checker_thread
 
 
+
+def sent_health_probes(data, topic_name):
+    global healt_probes_count, kafka_msg_producer
+    """
+    Produce a message to Kafka for a specific sensor type.
+
+    Args:
+        data (dict): The data to be sent as a message.
+        topic_name (str): The Kafka topic to which the message will be sent.
+    """
+    try:
+        kafka_msg_producer.produce(topic=topic_name, value=data)  # Send the message to Kafka
+        if topic_name.endswith('HEALTH'):
+            pass
+        else:
+            healt_probes_count += 1
+
+        if healt_probes_count % 50 == 0:
+            kafka_msg_producer.flush()
+        if healt_probes_count % 100 == 0:
+            logger.info(f"sent {healt_probes_count} health probes for now.")
+    except Exception as e:
+        print(f"Error while producing message to {topic_name} : {e}")
+
+
+def health_probes_thread(args):
+    global stop_flag, health_monitor
+
+    logger.info(f"Starting health probes thread for node: {SOURCE_IP}")
+
+    while not stop_flag:
+        health_dict = health_monitor.probe_health()
+        sent_health_probes(
+            data=health_dict, 
+            topic_name=SOURCE_IP)
+        time.sleep(args.probe_frequency_seconds)
+
+
 @app.get("/")
 async def root():
     logger.info("Root endpoint called")
@@ -239,29 +287,44 @@ async def health_check():
 
 @app.post("/replay")
 async def start_replay(kwargs: dict):
-    global PATTERN_TO_REPLAY, TARGET_IP, SOURCE_IP, SOURCE_MAC, SPEED_MULTIPLIER, stop_flag
-    global replay_thread, checker_thread
+    global PATTERN_TO_REPLAY, TARGET_IP, SOURCE_IP, SOURCE_MAC, SPEED_MULTIPLIER, stop_flag, HEALTH_MONITORING
+    global kafka_msg_producer, replay_thread, checker_thread, health_monitor
     logger.info("Replay endpoint called")
 
     
-    
+    HEALTH_MONITORING = kwargs.get('node_features', False)
+    KAFKA_ENDPOINT = kwargs.get('kafka_endpoint', None)
     PATTERN_TO_REPLAY = kwargs.get('pattern', None)
     TARGET_IP = kwargs.get('dest_ip', None)
+    SOURCE_IP = get_static_source_ip_address()
+    SOURCE_MAC = get_source_mac()
+    SPEED_MULTIPLIER = kwargs.get('speed_multiplier')
+
+    if HEALTH_MONITORING:
+        conf_prod = {
+        'bootstrap.servers': KAFKA_ENDPOINT,
+        'key.serializer': StringSerializer('utf_8'),
+        'value.serializer': lambda x, ctx: json.dumps(x).encode('utf-8')
+        }
+        kafka_msg_producer = SerializingProducer(conf_prod)
+
+        health_params = kwargs.get('health_params', {})
+        health_params['host_ip'] = SOURCE_IP
+        health_params['logger'] = logger
+        health_monitor = HealthMonitor(health_params)
 
     if not stop_flag:
         logger.info("Replay already in progress.")
         return {"message": f"Already processing {PATTERN_TO_REPLAY}"}
 
-    # Your new source IP
-    SOURCE_IP = get_static_source_ip_address()
-    SOURCE_MAC = get_source_mac()
-    SPEED_MULTIPLIER = kwargs.get('speed_multiplier')
+    
 
     logger.info(f'Source IP {SOURCE_IP}')
     logger.info(f'Source MAC {SOURCE_MAC}')
     logger.info(f'Target IP {TARGET_IP}')
     logger.info(f'Pattern to replay: {PATTERN_TO_REPLAY}')
     logger.info(f'Speed Multiplier: {SPEED_MULTIPLIER}')
+
 
     with stop_flag_lock:
         stop_flag = False
