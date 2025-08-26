@@ -29,7 +29,7 @@ from tqdm import tqdm
 import atexit
 import signal
 from threading import Lock
-
+import shlex
 
 # Global variables for process management
 SOURCE_IP = None
@@ -91,7 +91,7 @@ def get_source_mac(interface=IFACE_NAME):
     except ValueError:
         return "Interface not found"
     
-
+"""
 def modify_and_save_pcap(input_pcap_file, output_pcap_file):
     # Read the PCAP file
     print(f'Opening {input_pcap_file} file, please wait...')
@@ -107,14 +107,63 @@ def modify_and_save_pcap(input_pcap_file, output_pcap_file):
     # Save the modified packets to another PCAP file
     wrpcap(output_pcap_file, packets)
     print(f'File saved! ready to go!!')
+"""
+
+
+def detect_ips(pcap_file, max_packets=1000):
+    """
+    Quickly scan a PCAP for unique source/dest IPs.
+    Stops after max_packets for speed.
+    """
+    src_ips, dst_ips = set(), set()
+    with PcapReader(pcap_file) as reader:
+        for i, pkt in enumerate(reader):
+            if IP in pkt:
+                src_ips.add(pkt[IP].src)
+                dst_ips.add(pkt[IP].dst)
+            if i >= max_packets:
+                break
+    return list(src_ips), list(dst_ips)
+
+
+def modify_and_save_pcap(input_pcap_file, output_pcap_file):
+    """
+    Detect old src/dst IPs in the PCAP and rewrite them to new_src/new_dst
+    using tcprewrite.
+    """
+    src_ips, dst_ips = detect_ips(input_pcap_file)
+
+    if not src_ips or not dst_ips:
+        raise RuntimeError("No IP addresses detected in the PCAP")
+
+    # Pick the first observed src/dst (extend if multiple flows are present)
+    old_src, old_dst = src_ips[0], dst_ips[0]
+    print(f"Detected old_src={old_src}, old_dst={old_dst}")
+
+    cmd = (
+        f"tcprewrite --srcipmap={old_src}:{SOURCE_IP} "
+        f"--dstipmap={old_dst}:{TARGET_IP} "
+        f"--fixcsum --infile={shlex.quote(input_pcap_file)} "
+        f"--outfile={shlex.quote(output_pcap_file)}"
+    )
+
+    print(f"Running: {cmd}")
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print("tcprewrite failed:\n", result.stderr)
+        raise RuntimeError("tcprewrite failed")
+    print("PCAP rewrite complete:", output_pcap_file)
 
 
 def resend_pcap_with_modification_tcpreplay():
+    global stop_flag
+    
     if PATTERN_TO_REPLAY == 'doorlock':
         for i in range(1,4):
             original_pcap_file = os.path.join(f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}_{i}.pcap")
             file_to_replay = f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}_{i}-from{SOURCE_IP}to{TARGET_IP}.pcap"
-            rewrite_and_send(original_pcap_file,file_to_replay)
+            if not stop_flag:
+                rewrite_and_send(original_pcap_file,file_to_replay)
 
     else:
 
