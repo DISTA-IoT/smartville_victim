@@ -90,25 +90,6 @@ def get_source_mac(interface=IFACE_NAME):
         return mac_address
     except ValueError:
         return "Interface not found"
-    
-"""
-def modify_and_save_pcap(input_pcap_file, output_pcap_file):
-    # Read the PCAP file
-    print(f'Opening {input_pcap_file} file, please wait...')
-    packets = rdpcap(input_pcap_file)
-    print('File opened!')
-    print(f'Now rewritting packets with source {SOURCE_IP} and dest {TARGET_IP}')
-    # Modify source and destination IP addresses of each packet
-    for packet in tqdm(packets):
-        if IP in packet:
-            packet[IP].src = SOURCE_IP
-            packet[IP].dst = TARGET_IP
-    print(f'Packets re-written. NOW SAVING, please wait...')
-    # Save the modified packets to another PCAP file
-    wrpcap(output_pcap_file, packets)
-    print(f'File saved! ready to go!!')
-"""
-
 
 def detect_ips(pcap_file, max_packets=1000):
     """
@@ -157,7 +138,7 @@ def modify_and_save_pcap(input_pcap_file, output_pcap_file):
 
 def resend_pcap_with_modification_tcpreplay():
     global stop_flag
-    
+
     if PATTERN_TO_REPLAY == 'doorlock':
         for i in range(1,4):
             original_pcap_file = os.path.join(f"{PATTERN_TO_REPLAY}/{PATTERN_TO_REPLAY}_{i}.pcap")
