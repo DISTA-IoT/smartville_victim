@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
 
 
 # Clone the repo
-RUN git clone https://github.com/DISTA-IoT/smartville_victim.git /victim
+RUN git clone -b new_insubria https://github.com/DISTA-IoT/smartville_victim.git /victim
 
 WORKDIR /victim
 
