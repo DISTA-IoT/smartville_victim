@@ -43,7 +43,7 @@ PREPROCESSED = None
 SPEED_MULTIPLIER = None
 HEALTH_MONITORING = None
 KAFKA_ENDPOINT = None
-
+HEALTH_PROBE_FREQUENCY = None
 
 
 health_monitor = None
@@ -54,6 +54,7 @@ stop_flag_lock = Lock()
 current_replay_process: Optional[subprocess.Popen] = None
 replay_thread = None
 checker_thread = None
+health_thread = None
 rewriting = False
 
 logger = logging.getLogger("honeypot_server")
@@ -162,7 +163,6 @@ def resend_pcap_with_modification_tcpreplay():
         rewrite_and_send(original_pcap_file,file_to_replay)
 
 
-
 def rewrite_and_send(original_pcap_file, file_to_replay):
     global rewriting, current_replay_process, stop_flag
     rewriting = False
@@ -215,21 +215,29 @@ def start_replay_with_monitor():
     checker_thread = threading.Thread(
         target=process_checker,
         daemon=True)
-    
+    health_thread = threading.Thread(
+        target=health_probes_thread,
+        daemon=True
+    )
+
     replay_thread.start()
     checker_thread.start()
+    health_thread.start()
     
-    return replay_thread, checker_thread
+    return replay_thread, checker_thread, health_thread
 
 
-def health_probes_thread(args):
-    global stop_flag, health_monitor
+def health_probes_thread():
+    global stop_flag, health_monitor, HEALTH_PROBE_FREQUENCY
 
     logger.info(f"Starting health probes thread for node: {SOURCE_IP}")
 
     while not stop_flag:
-        health_monitor.probe_and_send()
-        time.sleep(args.probe_frequency_seconds)
+        if health_monitor.alive:
+            health_monitor.probe_and_send()
+        else:
+            logger.warning("Health monitor is not initialized. Skipping health probe.")
+        time.sleep(HEALTH_PROBE_FREQUENCY)
 
 
 @app.get("/")
@@ -259,7 +267,7 @@ async def health_check():
 @app.post("/replay")
 async def start_replay(kwargs: dict):
     global PATTERN_TO_REPLAY, TARGET_IP, SOURCE_IP, SOURCE_MAC, SPEED_MULTIPLIER, stop_flag, HEALTH_MONITORING
-    global kafka_msg_producer, replay_thread, checker_thread, health_monitor
+    global kafka_msg_producer, replay_thread, checker_thread, health_thread, health_monitor, HEALTH_PROBE_FREQUENCY
     logger.info("Replay endpoint called")
 
     
@@ -277,6 +285,7 @@ async def start_replay(kwargs: dict):
         health_params['logger'] = logger
         health_params['bootstrap_server'] = KAFKA_ENDPOINT
         health_monitor = HealthMonitor(health_params)
+        HEALTH_PROBE_FREQUENCY = health_params['probe_frequency_seconds']
 
     if not stop_flag:
         logger.info("Replay already in progress.")
@@ -294,7 +303,7 @@ async def start_replay(kwargs: dict):
     with stop_flag_lock:
         stop_flag = False
     
-    replay_thread, checker_thread = start_replay_with_monitor()  # Execute the function immediately
+    replay_thread, checker_thread, health_thread = start_replay_with_monitor()  # Execute the function immediately
 
     return {"message": f"Started replaying {PATTERN_TO_REPLAY} to {TARGET_IP}"}
 
@@ -310,7 +319,7 @@ async def get_replay_status():
 
 @app.post("/stop")
 async def stop_replay_endpoint():
-    global stop_flag, replay_thread, checker_thread
+    global stop_flag, replay_thread, checker_thread, health_thread
     logger.info("Stop replay endpoint called")
     if stop_flag:
         logger.info("Replay already stopped.")
@@ -324,6 +333,8 @@ async def stop_replay_endpoint():
         replay_thread.join()
     if checker_thread:
         checker_thread.join()
+    if health_thread:
+        health_thread.join()
     logger.info("Replay stopped.")
     return {"message": "Replay stopped."}
 
