@@ -30,8 +30,7 @@ import signal
 from threading import Lock
 import shlex
 from health_monitor import HealthMonitor
-from confluent_kafka import SerializingProducer
-from confluent_kafka.serialization import StringSerializer
+
 
 
 # Global variables for process management
@@ -223,41 +222,13 @@ def start_replay_with_monitor():
     return replay_thread, checker_thread
 
 
-
-def sent_health_probes(data, topic_name):
-    global healt_probes_count, kafka_msg_producer
-    """
-    Produce a message to Kafka for a specific sensor type.
-
-    Args:
-        data (dict): The data to be sent as a message.
-        topic_name (str): The Kafka topic to which the message will be sent.
-    """
-    try:
-        kafka_msg_producer.produce(topic=topic_name, value=data)  # Send the message to Kafka
-        if topic_name.endswith('HEALTH'):
-            pass
-        else:
-            healt_probes_count += 1
-
-        if healt_probes_count % 50 == 0:
-            kafka_msg_producer.flush()
-        if healt_probes_count % 100 == 0:
-            logger.info(f"sent {healt_probes_count} health probes for now.")
-    except Exception as e:
-        print(f"Error while producing message to {topic_name} : {e}")
-
-
 def health_probes_thread(args):
     global stop_flag, health_monitor
 
     logger.info(f"Starting health probes thread for node: {SOURCE_IP}")
 
     while not stop_flag:
-        health_dict = health_monitor.probe_health()
-        sent_health_probes(
-            data=health_dict, 
-            topic_name=SOURCE_IP)
+        health_monitor.probe_and_send()
         time.sleep(args.probe_frequency_seconds)
 
 
@@ -301,16 +272,10 @@ async def start_replay(kwargs: dict):
     SPEED_MULTIPLIER = kwargs.get('speed_multiplier')
 
     if HEALTH_MONITORING:
-        conf_prod = {
-        'bootstrap.servers': KAFKA_ENDPOINT,
-        'key.serializer': StringSerializer('utf_8'),
-        'value.serializer': lambda x, ctx: json.dumps(x).encode('utf-8')
-        }
-        kafka_msg_producer = SerializingProducer(conf_prod)
-
         health_params = kwargs.get('health_params', {})
         health_params['host_ip'] = SOURCE_IP
         health_params['logger'] = logger
+        health_params['bootstrap_server'] = KAFKA_ENDPOINT
         health_monitor = HealthMonitor(health_params)
 
     if not stop_flag:
