@@ -30,7 +30,7 @@ class HealthMonitor():
         self.stopme = False
         self.metrics = kwargs['probe_metrics']
         self.bootstrap_server = kwargs['bootstrap_server']
-        self.max_kafka_conn_retries = kwargs['max_kafka_conn_retries']
+        self.max_conn_retries = kwargs['max_conn_retries']
         self.other_configs = kwargs
         self.alive = False
         self.conf_prod = {
@@ -85,8 +85,8 @@ class HealthMonitor():
     def check_kafka_server(self):
         kafka_check = False
 
-        while not kafka_check and self.max_kafka_conn_retries > 0:
-            self.max_kafka_conn_retries -= 1
+        while not kafka_check and self.max_conn_retries > 0:
+            self.max_conn_retries -= 1
 
             if self.server_exist():
                 try:
