@@ -128,7 +128,7 @@ class HealthMonitor():
                 self.logger.info(f"Server {host}:{port} was reached.")
                 return True
         except (socket.error, socket.timeout) as e:
-            self.logger.error(f"Server {host}:{port} unreachable")
+            self.logger.error(f"Server {host}:{port} unreachable: {e}")
             return False
 
     

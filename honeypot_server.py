@@ -76,10 +76,11 @@ def cleanup():
     logger.info("Cleaning up before exit")
     with stop_flag_lock:
         stop_flag = True
+    stop_replay_endpoint()
     if current_replay_process is not None:
         os.killpg(os.getpgid(current_replay_process.pid), 15)
         current_replay_process = None
-
+        
 
 def handle_sigterm(signum, frame):
     cleanup()
