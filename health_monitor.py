@@ -189,8 +189,8 @@ class HealthMonitor():
 
     def release_producer(self):
         if self.producer:
-            self.producer.close()
-            self.logger.info("Producer closed.")
+            self.producer.flush(5)
+            self.logger.info("Producer threat ended.")
 
 
     def get_rtt(self):
