@@ -53,7 +53,7 @@ class HealthMonitor():
         else:
             new_topic = NewTopic(
                 self.topic_name, 
-                self.other_configs['topic_num_partitions'], 
+                1, # number of partitions
                 self.other_configs['topic_replication_factor'])
 
             self.admin_client.create_topics([new_topic])
@@ -185,6 +185,13 @@ class HealthMonitor():
                 self.logger.info(f"sent {self.health_probes_count} health probes for now.")
         except Exception as e:
             print(f"Error while producing message to {self.topic_name} : {e}")
+
+
+    def release_producer(self):
+        if self.producer:
+            self.producer.close()
+            self.logger.info("Producer closed.")
+
 
     def get_rtt(self):
             try:

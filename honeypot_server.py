@@ -95,6 +95,13 @@ def get_static_source_ip_address(interface=IFACE_NAME):
         return "Interface not found"
 
 
+def get_iface_mac(iface=IFACE_NAME):
+    try:
+        return ni.ifaddresses(iface)[ni.AF_LINK][0]['addr']
+    except (ValueError, KeyError):
+        raise RuntimeError(f"Could not get MAC for {iface}")
+    
+
 def get_source_mac(interface=IFACE_NAME):
     try:
         mac_address = ni.ifaddresses(interface)[ni.AF_LINK][0]['addr']
@@ -128,13 +135,16 @@ def modify_and_save_pcap(input_pcap_file, output_pcap_file):
     if not src_ips or not dst_ips:
         raise RuntimeError("No IP addresses detected in the PCAP")
 
-    # Pick the first observed src/dst (extend if multiple flows are present)
-    old_src, old_dst = src_ips[0], dst_ips[0]
-    print(f"Detected old_src={old_src}, old_dst={old_dst}")
+
+    # get MAC from iface
+    new_src_mac = get_iface_mac()
+    print(f"Using new_src_ip={SOURCE_IP}, new_dst_ip={TARGET_IP}, new_src_mac={new_src_mac}")
+
 
     cmd = (
-        f"tcprewrite --srcipmap={old_src}:{SOURCE_IP} "
-        f"--dstipmap={old_dst}:{TARGET_IP} "
+        f"tcprewrite --srcipmap=0.0.0.0/0:{SOURCE_IP} "
+        f"--dstipmap=0.0.0.0/0:{TARGET_IP} "
+        f"--enet-smac={new_src_mac} "
         f"--fixcsum --infile={shlex.quote(input_pcap_file)} "
         f"--outfile={shlex.quote(output_pcap_file)}"
     )
@@ -239,6 +249,8 @@ def health_probes_thread():
         else:
             logger.warning("Health monitor is not initialized. Skipping health probe.")
         time.sleep(HEALTH_PROBE_FREQUENCY)
+    health_monitor.release_producer()
+
 
 
 @app.get("/")
