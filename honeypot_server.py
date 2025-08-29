@@ -360,7 +360,13 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, handle_sigterm)
     signal.signal(signal.SIGINT, handle_sigterm)
     
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        port = int(os.environ.get("SERVER_PORT"))
+    except Exception as e:
+        print(f"Error parsing SERVER_PORT env var: {e}")
+        assert False
+
+    uvicorn.run(app, host="0.0.0.0", port=port)
     
 
 
