@@ -141,7 +141,7 @@ class HealthMonitor():
 
 
     def probe_and_send(self):
-
+        self.logger.info(f"HealthMonitor is probing {self.metrics} at {self.topic_name}")
         health_dict = {}
 
         if CPU in self.metrics:
@@ -180,7 +180,8 @@ class HealthMonitor():
             self.health_probes_count += 1
 
             if self.health_probes_count % 10 == 0:
-                self.producer.flush()
+                self.producer.flush(5)
+                self.logger.info(f"Tryed flushing {self.health_probes_count} health probes.")
             if self.health_probes_count % 50 == 0:
                 self.logger.info(f"sent {self.health_probes_count} health probes for now.")
         except Exception as e:
