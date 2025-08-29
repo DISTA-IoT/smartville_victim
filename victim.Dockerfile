@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     net-tools iputils-ping git build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-
+ARG CACHE_BUST=1
 # Clone the repo
 RUN git clone -b new_smartville https://github.com/DISTA-IoT/smartville_victim.git /victim
 
