@@ -16,6 +16,4 @@ WORKDIR /victim
 # Install Python dependencies
 RUN pip install --upgrade pip 
 
-RUN pip install uv
-
-RUN uv  pip sync --system requirements.txt
+RUN pip install -r requirements.txt
