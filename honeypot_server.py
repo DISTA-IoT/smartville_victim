@@ -335,7 +335,7 @@ async def stop_replay_endpoint():
 
 
 if __name__ == "__main__":
-    logger.info("Starting HONEYPOT FASTAPI server")
+    logger.info("Starting HoneyPot FastAPI server")
 
     atexit.register(cleanup)
     signal.signal(signal.SIGTERM, handle_sigterm)
