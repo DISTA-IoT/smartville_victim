@@ -33,6 +33,7 @@ class HealthMonitor():
         self.max_conn_retries = kwargs['max_conn_retries']
         self.other_configs = kwargs
         self.alive = False
+        self.producer = None
         self.conf_prod = {
             'bootstrap.servers': self.bootstrap_server,
             'key.serializer': StringSerializer('utf_8'),
@@ -44,6 +45,8 @@ class HealthMonitor():
                 self.alive = True
                 self.logger.info(f"Node HealthMonitor initialized. Will probe {self.metrics} every {self.probe_frequency_seconds} seconds.")
                 self.reset()
+            else:
+                raise RuntimeError(f"Could not find Kafka broker at {self.bootstrap_server}.")
                 
 
     def create_topic(self):
@@ -103,6 +106,7 @@ class HealthMonitor():
             else:
                 self.logger.error(f"Could not find Kafka broker at {self.bootstrap_server}.")
         return kafka_check
+
 
     def server_exist(self):
 
@@ -191,7 +195,7 @@ class HealthMonitor():
     def release_producer(self):
         if self.producer:
             self.producer.flush(5)
-            self.logger.info("Producer threat ended.")
+            self.logger.info("Producer thread ended.")
 
 
     def get_rtt(self):
