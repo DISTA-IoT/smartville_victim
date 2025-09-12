@@ -216,9 +216,10 @@ def process_checker():
         logger.info("Replay process stopped.")
 
 
-def start_replay_with_monitor():
+def start_replaying_threads():
     """Starts the replay function and the monitor in separate threads"""
-   
+    health_thread = None
+
     # Create and start threads
     replay_thread = threading.Thread(
         target=resend_pcap_with_modification_tcpreplay,
@@ -226,14 +227,18 @@ def start_replay_with_monitor():
     checker_thread = threading.Thread(
         target=process_checker,
         daemon=True)
-    health_thread = threading.Thread(
-        target=health_probes_thread,
-        daemon=True
-    )
-
+    
     replay_thread.start()
     checker_thread.start()
-    health_thread.start()
+
+
+    if HEALTH_MONITORING:
+        health_thread = threading.Thread(
+            target=health_probes_thread,
+            daemon=True
+        )
+
+        health_thread.start()
     
     return replay_thread, checker_thread, health_thread
 
@@ -292,7 +297,7 @@ async def start_replay(kwargs: dict):
     with stop_flag_lock:
         stop_flag = False
     
-    replay_thread, checker_thread, health_thread = start_replay_with_monitor()  # Execute the function immediately
+    replay_thread, checker_thread, health_thread = start_replaying_threads()  # Execute the function immediately
 
     return {"message": f"Started replaying {PATTERN_TO_REPLAY} to {TARGET_IP}"}
 
