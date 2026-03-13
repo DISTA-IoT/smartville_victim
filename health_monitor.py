@@ -171,7 +171,6 @@ class HealthMonitor():
             health_dict[self.topic_name + "_" + 'external_http_rtt'] = self.get_rtt_requests()
             health_dict.update(self.measure_net_overhead('icmp'))
             health_dict.update(self.measure_net_overhead('http'))
-            self.logger.debug(f"RTT: {health_dict[self.topic_name + '_' + RTT]}")
 
         if INBOUND in self.metrics:
             inbound_traffic_probe = self.get_inbound_traffic()
