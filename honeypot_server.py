@@ -30,10 +30,8 @@ from threading import Lock
 import shlex
 from health_monitor import HealthMonitor
 import time
-import statistics
 import subprocess
-import re
-import urllib.request
+
 
 
 # Global variables for process management
@@ -269,88 +267,6 @@ def echo_target():
     return {"status": "ok", "timestamp": time.time()}
 
 
-
-@app.post("/measure_overhead")
-def measure_overhead(kwargs: dict):
-    """
-    Trigger endpoint. POX calls this to initiate a measurement from this honeypot to another.
-    """
-    target_ip = kwargs.get("target_ip")
-    target_port = kwargs.get("target_port", int(os.environ.get("SERVER_PORT")))
-    num_requests = kwargs.get("num_requests", 20)
-    interval_ms = kwargs.get("interval_ms", 100)
-    mode = kwargs.get("mode", "http")  # Options: "icmp" or "http"
-    
-    if not target_ip:
-        return {"error": "target_ip is required"}
-
-    logger.info(f"Measuring overhead ({mode}) to {target_ip} with {num_requests} reqs")
-    
-    results = {"min_rtt_ms": 0.0, "max_rtt_ms": 0.0, "avg_rtt_ms": 0.0, "loss_percent": 0.0}
-
-    if mode == "icmp":
-        # Idea 1: High-Frequency ICMP Ping
-        interval_sec = interval_ms / 1000.0
-        # Note: ping interval < 0.2s requires root privileges in Linux. 
-        # Docker usually runs as root, so this should be fine.
-        cmd =["ping", "-c", str(num_requests), "-i", str(interval_sec), target_ip]
-        
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            output = proc.stdout
-            
-            # Parse packet loss
-            loss_match = re.search(r'(\d+)% packet loss', output)
-            if loss_match:
-                results["loss_percent"] = float(loss_match.group(1))
-            
-            # Parse min/avg/max
-            # Linux ping format: rtt min/avg/max/mdev = 0.045/0.052/0.060/0.005 ms
-            rtt_match = re.search(r'min/avg/max/.*? = ([\d\.]+)/([\d\.]+)/([\d\.]+)/', output)
-            if rtt_match:
-                results["min_rtt_ms"] = float(rtt_match.group(1))
-                results["avg_rtt_ms"] = float(rtt_match.group(2))
-                results["max_rtt_ms"] = float(rtt_match.group(3))
-                
-        except Exception as e:
-            logger.error(f"ICMP Ping failed: {e}")
-            return {"error": str(e)}
-
-    elif mode == "http":
-        # Idea 2: Application-Layer HTTP Echo
-        rtts =[]
-        successful_requests = 0
-        url = f"http://{target_ip}:{target_port}/echo"
-        
-        for _ in range(num_requests):
-            start_time = time.perf_counter()
-            try:
-                # 2-second timeout so it doesn't hang forever on dropped packets
-                with urllib.request.urlopen(url, timeout=2) as response:
-                    if response.getcode() == 200:
-                        successful_requests += 1
-            except Exception as e:
-                logger.warning(f"HTTP Echo failed: {e}")
-                pass
-            
-            end_time = time.perf_counter()
-            rtt_ms = (end_time - start_time) * 1000.0
-            rtts.append(rtt_ms)
-            
-            if interval_ms > 0:
-                time.sleep(interval_ms / 1000.0)
-        
-        if rtts:
-            results["min_rtt_ms"] = min(rtts)
-            results["max_rtt_ms"] = max(rtts)
-            results["avg_rtt_ms"] = statistics.mean(rtts)
-        
-        results["loss_percent"] = ((num_requests - successful_requests) / num_requests) * 100.0
-
-    logger.info(f"Overhead results: {results}")
-    return results
-
-
 @app.post("/replay")
 async def start_replay(kwargs: dict):
     global PATTERN_TO_REPLAY, TARGET_IP, SOURCE_IP, SOURCE_MAC, SPEED_MULTIPLIER, stop_flag, HEALTH_MONITORING
@@ -371,6 +287,7 @@ async def start_replay(kwargs: dict):
         health_params['host_ip'] = SOURCE_IP
         health_params['logger'] = logger
         health_params['bootstrap_server'] = KAFKA_ENDPOINT
+        health_params['controller_server_url']  = kwargs['controller_server_url']
         health_monitor = HealthMonitor(health_params)
         HEALTH_PROBE_FREQUENCY = health_params['probe_frequency_seconds']
 

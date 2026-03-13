@@ -9,6 +9,10 @@ from confluent_kafka import KafkaException
 from confluent_kafka import Producer, SerializingProducer
 from confluent_kafka.serialization import StringSerializer
 import json
+import os
+import statistics
+import re
+import urllib.request
 
 CPU = "CPU"
 RAM = "RAM"
@@ -22,6 +26,7 @@ class HealthMonitor():
 
 
     def __init__(self, kwargs):
+        self.kwargs = kwargs
         self.topic_name = kwargs['host_ip']
         self.logger = kwargs['logger']
         self.ping_thread_timeout = kwargs['ping_thread_timeout']
@@ -31,9 +36,13 @@ class HealthMonitor():
         self.metrics = kwargs['probe_metrics']
         self.bootstrap_server = kwargs['bootstrap_server']
         self.max_conn_retries = kwargs['max_conn_retries']
+        self.controller_server_url = kwargs['controller_server_url']
         self.other_configs = kwargs
         self.alive = False
         self.producer = None
+        self._psutil_process = psutil.Process()  # cache the process object
+        self._psutil_process.cpu_percent(interval=0.1)
+        self.cpu_count = os.cpu_count()
         self.conf_prod = {
             'bootstrap.servers': self.bootstrap_server,
             'key.serializer': StringSerializer('utf_8'),
@@ -137,9 +146,11 @@ class HealthMonitor():
 
     
     def reset(self):
-        self.previous_inbound_traffic = psutil.net_io_counters().bytes_recv
+        self.previous_inbound_traffic_bytes = psutil.net_io_counters().bytes_recv
+        self.previous_inbound_traffic_packets = psutil.net_io_counters().packets_recv
         self.previous_inbound_measurement_instant = time.time()
-        self.previous_outbound_traffic = psutil.net_io_counters().bytes_sent
+        self.previous_outbound_traffic_bytes = psutil.net_io_counters().bytes_sent
+        self.previous_outbound_traffic_packets = psutil.net_io_counters().packets_sent
         self.previous_outbound_measurement_instant = time.time()
         self.health_probes_count = 0
 
@@ -157,16 +168,21 @@ class HealthMonitor():
             self.logger.debug(f"Memory: {health_dict[self.topic_name + '_' + RAM]}")
 
         if RTT in self.metrics:
-            health_dict[self.topic_name + "_" + RTT] = self.get_rtt_requests()
+            health_dict[self.topic_name + "_" + 'external_http_rtt'] = self.get_rtt_requests()
+            health_dict.update(self.measure_net_overhead('icmp'))
+            health_dict.update(self.measure_net_overhead('http'))
             self.logger.debug(f"RTT: {health_dict[self.topic_name + '_' + RTT]}")
 
         if INBOUND in self.metrics:
-            health_dict[self.topic_name + "_" + INBOUND] = self.get_inbound_traffic()
-            self.logger.debug(f"Inbound traffic: {health_dict[self.topic_name + '_' + INBOUND]}")
+            inbound_traffic_probe = self.get_inbound_traffic()
+            health_dict.update(inbound_traffic_probe)
+            self.logger.debug(f"Inbound traffic: {inbound_traffic_probe}")
 
         if OUTBOUND in self.metrics:
-            health_dict[self.topic_name + "_" + OUTBOUND] = self.get_outbound_traffic()
-            self.logger.debug(f"Outbound traffic: {health_dict[self.topic_name + '_' + OUTBOUND]}")
+            outbound_traffic_probe = self.get_outbound_traffic()
+            health_dict.update(outbound_traffic_probe)
+            self.logger.debug(f"Outbound traffic: {outbound_traffic_probe}")
+            
             
         self.send_health_probes(health_dict)
             
@@ -285,7 +301,8 @@ class HealthMonitor():
 
     def get_cpu_usage(self):
         try:
-            cpu_usage =  psutil.cpu_percent(interval=1)
+            cpu_usage = self._psutil_process.cpu_percent(interval=0)
+            cpu_usage = (cpu_usage / self.cpu_count) * 100
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Error during diagnostics cpu usage request: {e.message}")
@@ -309,18 +326,24 @@ class HealthMonitor():
         try:
             network_stats = psutil.net_io_counters()
             current_measurement_instant = time.time()
-            current_inbound_traffic = network_stats.bytes_recv
+            current_inbound_traffic_bytes = network_stats.bytes_recv
+            current_inbound_traffic_packets = network_stats.packets_recv
+
 
             time_interval = current_measurement_instant - self.previous_inbound_measurement_instant
-            inbound_traffic = current_inbound_traffic - self.previous_inbound_traffic
+            inbound_traffic_bytes = current_inbound_traffic_bytes - self.previous_inbound_traffic_bytes
+            inbound_traffic_packets = current_inbound_traffic_packets - self.previous_inbound_traffic_packets
 
             if time_interval > 0:
-                inbound_traffic_per_second = inbound_traffic / time_interval
-                inbound_traffic_per_second = math.floor(inbound_traffic_per_second)
+                inbound_MBps = (inbound_traffic_bytes / time_interval) / (1024 * 1024)
+                inbound_packets_per_second = inbound_traffic_packets / time_interval
+                inbound_packets_per_second = math.floor(inbound_packets_per_second)
             else:
-                inbound_traffic_per_second = 0
+                inbound_MBps = 0
+                inbound_packets_per_second = 0
         
-            self.previous_inbound_traffic = current_inbound_traffic
+            self.previous_inbound_traffic_bytes = current_inbound_traffic_bytes
+            self.previous_inbound_traffic_packets = current_inbound_traffic_packets
             self.previous_inbound_measurement_instant = current_measurement_instant
 
         except Exception as e:
@@ -328,25 +351,33 @@ class HealthMonitor():
                 self.logger.error(f"Error during diagnostics inbound traffic volume: {e.message}")
             return None
 
-        return inbound_traffic_per_second
+        return {
+            self.topic_name + "_" + "inbound_MBps": inbound_MBps,
+            self.topic_name + "_" + "inbound_packets_per_second": inbound_packets_per_second
+        }
     
 
     def get_outbound_traffic(self):
         try:
             network_stats = psutil.net_io_counters()
             current_measurement_instant = time.time()
-            current_outbound_traffic = network_stats.bytes_sent
+            current_outbound_traffic_bytes = network_stats.bytes_sent
+            current_outbound_traffic_packets = network_stats.packets_sent
 
             time_interval = current_measurement_instant - self.previous_outbound_measurement_instant
-            outbound_traffic = current_outbound_traffic - self.previous_outbound_traffic
+            outbound_traffic_bytes = current_outbound_traffic_bytes - self.previous_outbound_traffic_bytes
+            outbound_traffic_packets = current_outbound_traffic_packets - self.previous_outbound_traffic_packets
 
             if time_interval > 0:
-                outbound_traffic_per_second = outbound_traffic / time_interval
-                outbound_traffic_per_second = math.floor(outbound_traffic_per_second)
+                outbound_traffic_MBps = (outbound_traffic_bytes / time_interval) / (1024 * 1024)
+                outbound_packets_per_second = outbound_traffic_packets / time_interval
+                outbound_packets_per_second = math.floor(outbound_packets_per_second)
             else:
-                outbound_traffic_per_second = 0
+                outbound_traffic_MBps = 0
+                outbound_packets_per_second = 0
 
-            self.previous_outbound_traffic = current_outbound_traffic
+            self.previous_outbound_traffic_bytes = current_outbound_traffic_bytes
+            self.previous_outbound_traffic_packets = current_outbound_traffic_packets
             self.previous_outbound_measurement_instant = current_measurement_instant
 
         except Exception as e: 
@@ -354,4 +385,84 @@ class HealthMonitor():
                 self.logger.error(f"Error during diagnostics outbound traffic volume: {e.message}")
             return None
 
-        return outbound_traffic_per_second
+        return {
+            self.topic_name + "_" + "outbound_MBps": outbound_traffic_MBps,
+            self.topic_name + "_" + "outbound_packets_per_second": outbound_packets_per_second
+        }
+
+
+    def measure_net_overhead(self, mode):
+        num_requests = self.kwargs.get("rtt_profiling_num_requests")
+        interval_ms = self.kwargs.get("rtt_profiling_interval_ms")
+        
+        target_ip = self.controller_server_url.split(":")[0]
+
+        self.logger.info(f"Measuring overhead ({mode}) to {target_ip} with {num_requests} reqs")
+        
+        results = {
+            self.topic_name + '_' + mode + '_' + "min_rtt_ms": 0.0, 
+            self.topic_name + '_' + mode + '_' + "max_rtt_ms": 0.0, 
+            self.topic_name + '_' + mode + '_' + "avg_rtt_ms": 0.0, 
+            self.topic_name + '_' + mode + '_' + "loss_percent": 0.0}
+
+        if mode == "icmp":
+            # Idea 1: High-Frequency ICMP Ping
+            interval_sec = interval_ms / 1000.0
+            # Note: ping interval < 0.2s requires root privileges in Linux. 
+            # Docker usually runs as root, so this should be fine.
+            cmd =["ping", "-c", str(num_requests), "-i", str(interval_sec), target_ip]
+            
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True)
+                output = proc.stdout
+                
+                # Parse packet loss
+                loss_match = re.search(r'(\d+)% packet loss', output)
+                if loss_match:
+                    results[self.topic_name + '_' + mode + '_' + "loss_percent"] = float(loss_match.group(1))
+                
+                # Parse min/avg/max
+                # Linux ping format: rtt min/avg/max/mdev = 0.045/0.052/0.060/0.005 ms
+                rtt_match = re.search(r'min/avg/max/.*? = ([\d\.]+)/([\d\.]+)/([\d\.]+)/', output)
+                if rtt_match:
+                    results[self.topic_name + '_' + mode + '_' + "min_rtt_ms"] = float(rtt_match.group(1))
+                    results[self.topic_name + '_' + mode + '_' + "avg_rtt_ms"] = float(rtt_match.group(2))
+                    results[self.topic_name + '_' + mode + '_' + "max_rtt_ms"] = float(rtt_match.group(3))
+                    
+            except Exception as e:
+                self.logger.error(f"ICMP Ping failed: {e}")
+                return {"error": str(e)}
+
+        elif mode == "http":
+            # Idea 2: Application-Layer HTTP Echo
+            rtts =[]
+            successful_requests = 0
+            url = f"http://{self.controller_server_url}/echo"
+            
+            for _ in range(num_requests):
+                start_time = time.perf_counter()
+                try:
+                    # 2-second timeout so it doesn't hang forever on dropped packets
+                    with urllib.request.urlopen(url, timeout=2) as response:
+                        if response.getcode() == 200:
+                            successful_requests += 1
+                except Exception as e:
+                    self.logger.warning(f"HTTP Echo failed: {e}")
+                    pass
+                
+                end_time = time.perf_counter()
+                rtt_ms = (end_time - start_time) * 1000.0
+                rtts.append(rtt_ms)
+                
+                if interval_ms > 0:
+                    time.sleep(interval_ms / 1000.0)
+            
+            if rtts:
+                results[self.topic_name + '_' + mode + '_' + "min_rtt_ms"] = min(rtts)
+                results[self.topic_name + '_' + mode + '_' + "max_rtt_ms"] = max(rtts)
+                results[self.topic_name + '_' + mode + '_' + "avg_rtt_ms"] = statistics.mean(rtts)
+            
+            results[self.topic_name + '_' + mode + '_' + "loss_percent"] = ((num_requests - successful_requests) / num_requests) * 100.0
+
+        self.logger.info(f"Overhead results: {results}")
+        return results
