@@ -4,6 +4,7 @@ import subprocess
 import math
 import socket
 import requests
+import threading
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka import KafkaException
 from confluent_kafka import Producer, SerializingProducer
@@ -33,6 +34,7 @@ class HealthMonitor():
         self.ping_host = kwargs['ping_host']
         self.probe_frequency_seconds = kwargs['probe_frequency_seconds']
         self.stopme = False
+        self._stop_event = threading.Event()
         self.metrics = kwargs['probe_metrics']
         self.bootstrap_server = kwargs['bootstrap_server']
         self.max_conn_retries = kwargs['max_conn_retries']
@@ -166,7 +168,14 @@ class HealthMonitor():
         self.health_probes_count = 0
 
 
+    def stop(self):
+        """Signal the monitor to stop immediately. Unblocks any sleeping waits."""
+        self._stop_event.set()
+
+
     def probe_and_send(self):
+        if self._stop_event.is_set():
+            return
         self.logger.info(f"HealthMonitor is probing {self.metrics} at {self.topic_name}")
         health_dict = {}
 
@@ -465,7 +474,8 @@ class HealthMonitor():
                 rtts.append(rtt_ms)
                 
                 if interval_ms > 0:
-                    time.sleep(interval_ms / 1000.0)
+                    if self._stop_event.wait(interval_ms / 1000.0):
+                        break  # stop requested, exit measurement loop early
             
             if rtts:
                 results[self.topic_name + '_' + mode + '_' + "min_rtt_ms"] = min(rtts)
