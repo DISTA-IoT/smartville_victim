@@ -48,6 +48,8 @@ class HealthMonitor():
             'key.serializer': StringSerializer('utf_8'),
             'value.serializer': lambda x, ctx: json.dumps(x).encode('utf-8')
             }
+        self.add_ip_to_no_proxy_env_var(self.controller_server_url)
+        
         if self.check_kafka_server():
             if self.create_topic():
                 self.producer = SerializingProducer(self.conf_prod)
@@ -57,6 +59,15 @@ class HealthMonitor():
             else:
                 raise RuntimeError(f"Could not find Kafka broker at {self.bootstrap_server}.")
                 
+
+    def add_ip_to_no_proxy_env_var(self, some_ip):
+        no_proxy = os.environ.get('no_proxy', '')
+        if no_proxy != '':
+            no_proxy += ','
+        no_proxy += some_ip
+        os.environ['no_proxy'] = no_proxy
+        self.logger.info(f"Fixed no_proxy to {no_proxy}")
+
 
     def create_topic(self):
         if self.topic_exists():
