@@ -224,13 +224,38 @@ class HealthMonitor():
             if self.health_probes_count % 50 == 0:
                 self.logger.info(f"sent {self.health_probes_count} health probes for now.")
         except Exception as e:
-            print(f"Error while producing message to {self.topic_name} : {e}")
+            self.logger.error(f"Error while producing message to {self.topic_name} : {e}")
 
 
     def release_producer(self):
         if self.producer:
             self.producer.flush(5)
             self.logger.info("Producer thread ended.")
+
+
+    def cleanup_kafka(self):
+        """Flush producer + delete the node's topic + mark everything dead.
+        Called automatically on stop so nothing is left talking to Kafka."""
+        if self.producer:
+            try:
+                self.producer.flush(10)
+                self.logger.info(f"Producer flushed and closed for {self.topic_name}")
+                self.producer = None
+            except Exception as e:
+                self.logger.error(f"Flush failed (Kafka probably already down): {e}")
+
+        # Delete the topic (this is the "delete every kafka info" part)
+        if hasattr(self, 'admin_client') and self.admin_client is not None:
+            try:
+                self.admin_client.delete_topics([self.topic_name])
+                time.sleep(3)  # small grace period, same style you already use for create
+                self.logger.info(f"Deleted Kafka topic {self.topic_name}")
+            except Exception as e:
+                self.logger.warning(f"Could not delete topic {self.topic_name} "
+                                  f"(Kafka may be down or already gone): {e}")
+
+        self.alive = False
+        self.logger.info(f"HealthMonitor for {self.topic_name} fully cleaned up.")
 
 
     def get_rtt(self):
