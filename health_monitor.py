@@ -58,7 +58,6 @@ class HealthMonitor():
             'key.serializer': StringSerializer('utf_8'),
             'value.serializer': lambda x, ctx: json.dumps(x).encode('utf-8')
             }
-        self.add_ip_to_no_proxy_env_var(self.controller_server_url)
         
         if self.check_kafka_server():
             if self.create_topic():
