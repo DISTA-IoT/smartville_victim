@@ -17,10 +17,18 @@ import urllib.request
 
 CPU = "CPU"
 RAM = "RAM"
-RTT = "RTT"
-INBOUND = "INBOUND"
-OUTBOUND = "OUTBOUND"
-HEALTH = "HEALTH"
+external_http_rtt = 'external_http_rtt'
+icmp_min_rtt_ms = 'icmp_min_rtt_ms'
+icmp_max_rtt_ms = 'icmp_max_rtt_ms'
+icmp_avg_rtt_ms = 'icmp_avg_rtt_ms'
+icmp_loss_percent = 'icmp_loss_percent'
+http_min_rtt_ms = 'http_min_rtt_ms'
+http_max_rtt_ms = 'http_max_rtt_ms'
+http_avg_rtt_ms = 'http_avg_rtt_ms'
+inbound_MBps = 'inbound_MBps'
+inbound_packets_per_second = 'inbound_packets_per_second'
+outbound_MBps = 'outbound_MBps'
+outbound_packets_per_second = 'outbound_packets_per_second'
 
         
 class HealthMonitor():
@@ -187,17 +195,21 @@ class HealthMonitor():
             health_dict[self.topic_name + "_" + RAM] = self.get_memory_usage()
             self.logger.debug(f"Memory: {health_dict[self.topic_name + '_' + RAM]}")
 
-        if RTT in self.metrics:
+        if external_http_rtt in self.metrics:
             health_dict[self.topic_name + "_" + 'external_http_rtt'] = self.get_rtt_requests()
+        
+        if icmp_avg_rtt_ms in self.metrics or icmp_min_rtt_ms in self.metrics or icmp_max_rtt_ms in self.metrics:
             health_dict.update(self.measure_net_overhead('icmp'))
+        
+        if http_avg_rtt_ms in self.metrics or http_min_rtt_ms in self.metrics or http_max_rtt_ms in self.metrics:
             health_dict.update(self.measure_net_overhead('http'))
 
-        if INBOUND in self.metrics:
+        if inbound_MBps in self.metrics or inbound_packets_per_second in self.metrics:
             inbound_traffic_probe = self.get_inbound_traffic()
             health_dict.update(inbound_traffic_probe)
             self.logger.debug(f"Inbound traffic: {inbound_traffic_probe}")
 
-        if OUTBOUND in self.metrics:
+        if outbound_MBps in self.metrics or outbound_packets_per_second in self.metrics:
             outbound_traffic_probe = self.get_outbound_traffic()
             health_dict.update(outbound_traffic_probe)
             self.logger.debug(f"Outbound traffic: {outbound_traffic_probe}")
