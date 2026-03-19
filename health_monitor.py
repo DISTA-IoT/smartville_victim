@@ -24,6 +24,7 @@ icmp_avg_rtt_ms = 'icmp_avg_rtt_ms'
 icmp_loss_percent = 'icmp_loss_percent'
 http_min_rtt_ms = 'http_min_rtt_ms'
 http_max_rtt_ms = 'http_max_rtt_ms'
+http_loss_percent = 'http_loss_percent'
 http_avg_rtt_ms = 'http_avg_rtt_ms'
 inbound_MBps = 'inbound_MBps'
 inbound_packets_per_second = 'inbound_packets_per_second'
@@ -197,10 +198,10 @@ class HealthMonitor():
         if external_http_rtt in self.metrics:
             health_dict[self.topic_name + "_" + 'external_http_rtt'] = self.get_rtt_requests()
         
-        if icmp_avg_rtt_ms in self.metrics or icmp_min_rtt_ms in self.metrics or icmp_max_rtt_ms in self.metrics:
+        if icmp_avg_rtt_ms in self.metrics or icmp_min_rtt_ms in self.metrics or icmp_max_rtt_ms in self.metrics or icmp_loss_percent in self.metrics:
             health_dict.update(self.measure_net_overhead('icmp'))
         
-        if http_avg_rtt_ms in self.metrics or http_min_rtt_ms in self.metrics or http_max_rtt_ms in self.metrics:
+        if http_avg_rtt_ms in self.metrics or http_min_rtt_ms in self.metrics or http_max_rtt_ms in self.metrics or http_loss_percent in self.metrics:
             health_dict.update(self.measure_net_overhead('http'))
 
         if inbound_MBps in self.metrics or inbound_packets_per_second in self.metrics:
