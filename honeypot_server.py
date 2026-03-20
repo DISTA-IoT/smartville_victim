@@ -288,7 +288,7 @@ async def start_replay(kwargs: dict):
         health_params['host_ip'] = SOURCE_IP
         health_params['logger'] = logger
         health_params['bootstrap_server'] = KAFKA_ENDPOINT
-        health_params['controller_server_url']  = kwargs['controller_server_url']
+        health_params['mockserver_url']  = kwargs['mockserver_url']
         health_monitor = HealthMonitor(health_params)
         HEALTH_PROBE_FREQUENCY = health_params['probe_frequency_seconds']
 

@@ -47,7 +47,7 @@ class HealthMonitor():
         self.metrics = kwargs['probe_metrics']
         self.bootstrap_server = kwargs['bootstrap_server']
         self.max_conn_retries = kwargs['max_conn_retries']
-        self.controller_server_url = kwargs['controller_server_url']
+        self.mockserver_url = kwargs['mockserver_url']
         self.other_configs = kwargs
         self.alive = False
         self.producer = None
@@ -451,7 +451,7 @@ class HealthMonitor():
         num_requests = self.kwargs.get("rtt_profiling_num_requests")
         interval_ms = self.kwargs.get("rtt_profiling_interval_ms")
         
-        target_ip = self.controller_server_url.split(":")[0]
+        target_ip = self.mockserver_url.split(":")[0]
 
         self.logger.info(f"Measuring overhead ({mode}) to {target_ip} with {num_requests} reqs")
         
@@ -493,7 +493,7 @@ class HealthMonitor():
             # Idea 2: Application-Layer HTTP Echo
             rtts =[]
             successful_requests = 0
-            url = f"http://{self.controller_server_url}/echo"
+            url = f"http://{self.mockserver_url}/echo"
             
             for _ in range(num_requests):
                 start_time = time.perf_counter()
