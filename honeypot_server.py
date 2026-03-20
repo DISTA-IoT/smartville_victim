@@ -262,14 +262,6 @@ def health_probes_thread():
     health_monitor.cleanup_kafka()   # this does flush + topic deletion
 
 
-@app.get("/echo")
-def echo_target():
-    """
-    Application-layer echo.
-    Simulates a lightweight microservice response.
-    """
-    return {"status": "ok", "timestamp": time.time()}
-
 
 @app.post("/replay")
 async def start_replay(kwargs: dict):
@@ -285,6 +277,11 @@ async def start_replay(kwargs: dict):
     SOURCE_IP = get_static_source_ip_address()
     SOURCE_MAC = get_source_mac()
     SPEED_MULTIPLIER = kwargs.get('speed_multiplier')
+
+    if 'internal_ips' in kwargs:
+        internal_ips = kwargs['internal_ips']
+        if internal_ips:
+            os.environ['no_proxy'] = ','.join(internal_ips)
 
     if HEALTH_MONITORING:
         health_params = kwargs.get('health_params', {})
@@ -339,7 +336,7 @@ async def stop_replay_endpoint():
         stop_flag = True
     if health_monitor and HEALTH_MONITORING:
         health_monitor.stop()  # unblocks _stop_event.wait() immediately
-        health_monitor.cleanup_kafka()
+        health_monitor.cleanup_kafka()  # belt-and-suspenders in case thread crashed
     if replay_thread:
         replay_thread.join()
     if checker_thread:
@@ -365,6 +362,3 @@ if __name__ == "__main__":
         assert False
 
     uvicorn.run(app, host="0.0.0.0", port=port)
-    
-
-
