@@ -270,7 +270,7 @@ async def start_replay(kwargs: dict):
     logger.info("Replay endpoint called")
 
     
-    HEALTH_MONITORING = kwargs.get('node_features', False)
+    HEALTH_MONITORING = kwargs.get('health_monitoring', False)
     KAFKA_ENDPOINT = kwargs.get('kafka_endpoint', None)
     PATTERN_TO_REPLAY = kwargs.get('pattern', None)
     TARGET_IP = kwargs.get('dest_ip', None)
